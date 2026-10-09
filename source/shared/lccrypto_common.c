@@ -87,7 +87,8 @@ void aws_validate_libcrypto_linkage(void) {
     /* get FIPS mode at runtime because headers don't give any indication of
      * AWS-LC's FIPSness at aws-c-cal compile time. version number can still be
      * captured at preprocess/compile time from AWSLC_VERSION_NUMBER_STRING.*/
-    const char *mode = FIPS_mode() ? "AWS-LC FIPS" : "AWS-LC";
+    const bool is_fips = FIPS_mode() != 0;
+    const char *mode = is_fips ? "AWS-LC FIPS" : "AWS-LC";
     snprintf(expected_version, sizeof(expected_version), "%s %s", mode, AWSLC_VERSION_NUMBER_STRING);
 #elif defined(OPENSSL_IS_BORINGSSL)
     snprintf(expected_version, sizeof(expected_version), "BoringSSL");
@@ -110,7 +111,28 @@ void aws_validate_libcrypto_linkage(void) {
     const char *openssl_prefix = "OpenSSL ";
     AWS_FATAL_ASSERT(strncmp(openssl_prefix, expected_version, strlen(openssl_prefix)) == 0);
     AWS_FATAL_ASSERT(strncmp(openssl_prefix, runtime_version, strlen(openssl_prefix)) == 0);
+#elif defined(OPENSSL_IS_AWSLC)
+    /* Validate that we linked an AWS-LC of the same FIPSness, since mode is part of the version string. */
+    const size_t mode_len = strlen(mode) + 1; /* +1 for the space separating mode from version number */
+    AWS_FATAL_ASSERT(strncmp(expected_version, runtime_version, mode_len) == 0 && "libcrypto mislink");
+
+    const char *expected_number = expected_version + mode_len;
+    const char *runtime_number = runtime_version + mode_len;
+    if (is_fips) {
+        /* A FIPS consumer is bound to the specific module version it was validated against, so require the
+         * whole version to match. */
+        AWS_FATAL_ASSERT(strcmp(expected_number, runtime_number) == 0 && "libcrypto mislink");
+    } else {
+        /* Non-FIPS AWS-LC holds API and ABI compatibility within a major version, so a minor or patch
+         * difference is not a mislink. Compare through the separator so that "4" does not match "41". */
+        const size_t major_len = strcspn(expected_number, ".") + 1;
+        AWS_FATAL_ASSERT(strncmp(expected_number, runtime_number, major_len) == 0 && "libcrypto mislink");
+    }
 #else
+    /* BoringSSL, and anything else that reaches here, publishes no version this check can compare across the
+     * compile/link boundary, so expected_version carries a library name alone and the comparison confirms
+     * only that we linked the library we compiled against. Keep it exact: with no compatibility guarantee to
+     * lean on, any difference is a mislink. */
     AWS_FATAL_ASSERT(strcmp(expected_version, runtime_version) == 0 && "libcrypto mislink");
 #endif
 }
