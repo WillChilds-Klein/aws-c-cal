@@ -111,9 +111,9 @@ void aws_validate_libcrypto_linkage(void) {
     AWS_FATAL_ASSERT(strncmp(openssl_prefix, expected_version, strlen(openssl_prefix)) == 0);
     AWS_FATAL_ASSERT(strncmp(openssl_prefix, runtime_version, strlen(openssl_prefix)) == 0);
 #elif defined(OPENSSL_IS_AWSLC) && defined(AWSLC_FIPS_VERSION_NUMBER)
-    /* FIPS_version() is the FIPS branch the linked library was cut from, and zero outside FIPS mode, so one
-     * comparison covers both FIPSness and branch. A branch is the unit a module is validated as, so release
-     * versions within it are interchangeable; outside FIPS mode the version string must still match. */
+    /* FIPS_version() returns the module version of the loaded library, AWSLC_FIPS_VERSION_NUMBER gives the
+     * module version aws-c-cal was compiled against. Allow different AWS-LC versions in FIPS mode as long as
+     * module version matches. Outside FIPS mode the version string must fully match. */
     const uint32_t runtime_fips_version = FIPS_version();
     if (runtime_fips_version != 0) {
         AWS_FATAL_ASSERT(runtime_fips_version == AWSLC_FIPS_VERSION_NUMBER && "libcrypto mislink");
