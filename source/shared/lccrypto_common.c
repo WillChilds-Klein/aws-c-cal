@@ -121,6 +121,16 @@ void aws_validate_libcrypto_linkage(void) {
     const char *runtime_number = runtime_version + mode_len;
     const size_t major_len = strcspn(expected_number, ".") + 1;
     AWS_FATAL_ASSERT(strncmp(expected_number, runtime_number, major_len) == 0 && "libcrypto mislink");
+
+#    if defined(AWSLC_FIPS_VERSION_NUMBER)
+    /* FIPS_version() reports the FIPS branch the linked library was cut from, and zero outside FIPS mode.
+     * The headers name their own branch but cannot say whether the library built from them is FIPS, so the
+     * branches are only comparable once a FIPS library is on the other side. AWS-LC gained the macro and an
+     * unconditional FIPS_version() in 5.x, hence the guard. */
+    if (FIPS_version() != 0) {
+        AWS_FATAL_ASSERT(FIPS_version() == AWSLC_FIPS_VERSION_NUMBER && "libcrypto mislink");
+    }
+#    endif
 #else
     /* BoringSSL, and anything else that reaches here, publishes no version this check can compare across the
      * compile/link boundary, so expected_version carries a library name alone and the comparison confirms
