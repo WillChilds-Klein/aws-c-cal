@@ -110,32 +110,19 @@ void aws_validate_libcrypto_linkage(void) {
     const char *openssl_prefix = "OpenSSL ";
     AWS_FATAL_ASSERT(strncmp(openssl_prefix, expected_version, strlen(openssl_prefix)) == 0);
     AWS_FATAL_ASSERT(strncmp(openssl_prefix, runtime_version, strlen(openssl_prefix)) == 0);
-#elif defined(OPENSSL_IS_AWSLC)
-    /* Validate that we linked an AWS-LC of the same FIPSness, since mode is part of the version string. */
-    const size_t mode_len = strlen(mode) + 1; /* +1 for the space separating mode from version number */
-    AWS_FATAL_ASSERT(strncmp(expected_version, runtime_version, mode_len) == 0 && "libcrypto mislink");
-
-    /* An AWS-LC major version is an LTS line, within which API and ABI stay compatible, so a minor or patch
-     * difference is not a mislink. Compare through the separator so that "4" does not match "41". */
-    const char *expected_number = expected_version + mode_len;
-    const char *runtime_number = runtime_version + mode_len;
-    const size_t major_len = strcspn(expected_number, ".") + 1;
-    AWS_FATAL_ASSERT(strncmp(expected_number, runtime_number, major_len) == 0 && "libcrypto mislink");
-
-#    if defined(AWSLC_FIPS_VERSION_NUMBER)
-    /* FIPS_version() reports the FIPS branch the linked library was cut from, and zero outside FIPS mode.
-     * The headers name their own branch but cannot say whether the library built from them is FIPS, so the
-     * branches are only comparable once a FIPS library is on the other side. AWS-LC gained the macro and an
-     * unconditional FIPS_version() in 5.x, hence the guard. */
-    if (FIPS_version() != 0) {
-        AWS_FATAL_ASSERT(FIPS_version() == AWSLC_FIPS_VERSION_NUMBER && "libcrypto mislink");
+#elif defined(OPENSSL_IS_AWSLC) && defined(AWSLC_FIPS_VERSION_NUMBER)
+    /* FIPS_version() is the FIPS branch the linked library was cut from, and zero outside FIPS mode, so one
+     * comparison covers both FIPSness and branch. A branch is the unit a module is validated as, so release
+     * versions within it are interchangeable; outside FIPS mode the version string must still match. */
+    const uint32_t runtime_fips_version = FIPS_version();
+    if (runtime_fips_version != 0) {
+        AWS_FATAL_ASSERT(runtime_fips_version == AWSLC_FIPS_VERSION_NUMBER && "libcrypto mislink");
+    } else {
+        AWS_FATAL_ASSERT(strcmp(expected_version, runtime_version) == 0 && "libcrypto mislink");
     }
-#    endif
 #else
-    /* BoringSSL, and anything else that reaches here, publishes no version this check can compare across the
-     * compile/link boundary, so expected_version carries a library name alone and the comparison confirms
-     * only that we linked the library we compiled against. Keep it exact: with no compatibility guarantee to
-     * lean on, any difference is a mislink. */
+    /* BoringSSL and AWS-LC before 5.x expose nothing to compare beyond the version string, so keep it
+     * exact. BoringSSL's string is a library name alone, leaving a check of library identity. */
     AWS_FATAL_ASSERT(strcmp(expected_version, runtime_version) == 0 && "libcrypto mislink");
 #endif
 }
